@@ -1,0 +1,398 @@
+---
+title: "Agent context"
+description: "Fetch a user's behavioral context from Harpy and use it in your AI agent."
+---
+
+Harpy's API returns a rich behavioral profile for any identified user — including a ready-to-use `personalization_directive` that tells your agent exactly how to treat that person. Pass it into your system prompt and the agent immediately understands who it's talking to.
+
+---
+
+## How it works
+
+1. A user interacts with your AI agent
+2. You call the Harpy API with that user's ID
+3. Harpy returns a structured context object — behavioral summary, personalization guidance, friction signals, and feature adoption data
+4. You inject the context into the agent's system prompt
+5. The agent responds with full awareness of that user's situation
+
+---
+
+## Fetch user context
+
+```bash
+curl https://api.harpy.dev/v1/users/USER_UID/context \
+  -H "Authorization: Bearer YOUR_API_SECRET"
+```
+
+**Response:**
+
+```json
+{
+  "user_id": "usr_8f3k2m",
+  "email": "sarah@acmecorp.com",
+  "name": "Sarah Chen",
+  "company": "Acme Corp",
+  "last_active": "2026-03-04T14:22:00Z",
+
+  "behavioral_summary": "Power user (87th percentile in company). Uses reporting daily, has built 12 custom dashboards. Explored API settings twice this week but did not complete setup. Active in team admin since last Thursday. No engagement with integrations.",
+
+  "personalization_directive": "Treat as advanced user. Skip onboarding context. If asking about APIs, note they started setup but may need help completing it. Proactively suggest integrations as an untapped area. Respond at a technical level — this user understands the product deeply.",
+
+  "friction_signals": [
+    {
+      "feature": "API Settings > Authentication",
+      "signal": "Visited 2x, exited without completing",
+      "severity": "medium",
+      "last_seen": "2026-03-03T11:45:00Z"
+    }
+  ],
+
+  "feature_adoption": {
+    "reporting":    { "depth": "advanced",   "frequency": "daily"  },
+    "team_admin":   { "depth": "moderate",   "frequency": "weekly" },
+    "integrations": { "depth": "none",       "frequency": "never"  },
+    "api_settings": { "depth": "exploring",  "frequency": "recent" }
+  },
+
+  "company_context": {
+    "total_users": 34,
+    "user_percentile": 87,
+    "company_health": "healthy",
+    "plan": "growth",
+    "top_features_adopted": ["reporting", "dashboards", "exports"]
+  },
+
+  "enrichment_sources": ["direct_tracking", "hubspot", "stripe"]
+}
+```
+
+<Tip>
+  The `personalization_directive` field is pre-written for your system prompt — it tells your agent how to treat this specific user based on their behaviour. Use it directly rather than trying to derive the same guidance from raw signals.
+</Tip>
+
+<Accordion title="Response field reference">
+
+| Field | Description |
+|-------|-------------|
+| `user_id`, `email`, `name`, `company`, `last_active` | Attributes identifying who the user is and where they work. |
+| `behavioral_summary` | A plain-language narrative of what this user has been doing and where they're headed next. |
+| `personalization_directive` | A ready-to-use system prompt instruction — drop it in and your agent instantly adapts to this user. |
+| `friction_signals` | Ranked moments where this user got stuck, with feature path, severity, and timestamp. |
+| `feature_adoption` | Which features they've explored, how deeply, and how often — so your agent never over or under-explains. |
+| `company_context` | Org-level data — plan, team size, health — so your agent can tailor for the account, not just the user. |
+| `enrichment_sources` | The data sources Harpy used to build this profile (e.g. direct tracking, HubSpot, Stripe). |
+
+</Accordion>
+
+---
+
+## Use context in an agent
+
+Inject the Harpy context into your system prompt before the user's message. The pattern works with any LLM provider.
+
+<Tabs>
+  <Tab title="OpenAI">
+    ```javascript
+    import OpenAI from 'openai';
+
+    const client = new OpenAI();
+
+    async function runAgent(userId, userMessage) {
+      // 1. Fetch context from Harpy
+      const res = await fetch(`https://api.harpy.dev/v1/users/${userId}/context`, {
+        headers: { Authorization: `Bearer ${process.env.HARPY_API_SECRET}` },
+      });
+      const ctx = await res.json();
+
+      // 2. Build system prompt with context
+      const systemPrompt = `You are a helpful assistant for ${ctx.company ?? 'this product'}.
+
+## About this user
+${ctx.behavioral_summary}
+
+## How to respond to them
+${ctx.personalization_directive}`;
+
+      // 3. Call the model
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+      });
+
+      return response.choices[0].message.content;
+    }
+    ```
+  </Tab>
+  <Tab title="Anthropic">
+    ```javascript
+    import Anthropic from '@anthropic-ai/sdk';
+
+    const client = new Anthropic();
+
+    async function runAgent(userId, userMessage) {
+      // 1. Fetch context from Harpy
+      const res = await fetch(`https://api.harpy.dev/v1/users/${userId}/context`, {
+        headers: { Authorization: `Bearer ${process.env.HARPY_API_SECRET}` },
+      });
+      const ctx = await res.json();
+
+      // 2. Build system prompt with context
+      const systemPrompt = `You are a helpful assistant for ${ctx.company ?? 'this product'}.
+
+## About this user
+${ctx.behavioral_summary}
+
+## How to respond to them
+${ctx.personalization_directive}`;
+
+      // 3. Call the model
+      const response = await client.messages.create({
+        model: 'claude-opus-4-6',
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
+      });
+
+      return response.content[0].text;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<AccordionGroup>
+  <Accordion title="Python">
+    ```python
+    import os
+    import httpx
+    from openai import OpenAI  # or: import anthropic
+
+    client = OpenAI()
+
+    def run_agent(user_id: str, user_message: str) -> str:
+        # 1. Fetch context from Harpy
+        res = httpx.get(
+            f"https://api.harpy.dev/v1/users/{user_id}/context",
+            headers={"Authorization": f"Bearer {os.environ['HARPY_API_SECRET']}"},
+        )
+        ctx = res.json()
+
+        # 2. Build system prompt
+        system_prompt = f"""You are a helpful assistant for {ctx.get('company', 'this product')}.
+
+## About this user
+{ctx['behavioral_summary']}
+
+## How to respond to them
+{ctx['personalization_directive']}"""
+
+        # 3. Call the model
+        completion = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_message},
+            ],
+        )
+        return completion.choices[0].message.content
+    ```
+
+    To use Anthropic instead, swap step 3:
+
+    ```python
+    import anthropic
+    client = anthropic.Anthropic()
+
+    msg = client.messages.create(
+        model="claude-opus-4-6",
+        max_tokens=1024,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_message}],
+    )
+    return msg.content[0].text
+    ```
+  </Accordion>
+  <Accordion title="Ruby">
+    ```ruby
+    require 'net/http'
+    require 'json'
+    require 'openai'  # gem 'ruby-openai'
+
+    def run_agent(user_id, user_message)
+      # 1. Fetch context from Harpy
+      uri = URI("https://api.harpy.dev/v1/users/#{user_id}/context")
+      req = Net::HTTP::Get.new(uri)
+      req['Authorization'] = "Bearer #{ENV['HARPY_API_SECRET']}"
+      res  = Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |h| h.request(req) }
+      ctx  = JSON.parse(res.body)
+
+      # 2. Build system prompt
+      system_prompt = <<~PROMPT
+        You are a helpful assistant for #{ctx['company'] || 'this product'}.
+
+        ## About this user
+        #{ctx['behavioral_summary']}
+
+        ## How to respond to them
+        #{ctx['personalization_directive']}
+      PROMPT
+
+      # 3. Call the model
+      client   = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
+      response = client.chat(parameters: {
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: system_prompt },
+          { role: 'user',   content: user_message  },
+        ],
+      })
+      response.dig('choices', 0, 'message', 'content')
+    end
+    ```
+  </Accordion>
+  <Accordion title="Go">
+    ```go
+    package main
+
+    import (
+        "context"
+        "encoding/json"
+        "fmt"
+        "net/http"
+        "os"
+
+        openai "github.com/sashabaranov/go-openai"
+    )
+
+    type HarpyContext struct {
+        Company                  string `json:"company"`
+        BehavioralSummary        string `json:"behavioral_summary"`
+        PersonalizationDirective string `json:"personalization_directive"`
+    }
+
+    func runAgent(userID, userMessage string) (string, error) {
+        // 1. Fetch context from Harpy
+        req, _ := http.NewRequest("GET",
+            fmt.Sprintf("https://api.harpy.dev/v1/users/%s/context", userID), nil)
+        req.Header.Set("Authorization", "Bearer "+os.Getenv("HARPY_API_SECRET"))
+
+        resp, err := http.DefaultClient.Do(req)
+        if err != nil {
+            return "", err
+        }
+        defer resp.Body.Close()
+
+        var ctx HarpyContext
+        json.NewDecoder(resp.Body).Decode(&ctx)
+
+        // 2. Build system prompt
+        company := ctx.Company
+        if company == "" { company = "this product" }
+
+        systemPrompt := fmt.Sprintf(
+            "You are a helpful assistant for %s.\n\n## About this user\n%s\n\n## How to respond to them\n%s",
+            company, ctx.BehavioralSummary, ctx.PersonalizationDirective,
+        )
+
+        // 3. Call the model
+        client   := openai.NewClient(os.Getenv("OPENAI_API_KEY"))
+        response, err := client.CreateChatCompletion(context.Background(),
+            openai.ChatCompletionRequest{
+                Model: openai.GPT4o,
+                Messages: []openai.ChatCompletionMessage{
+                    {Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
+                    {Role: openai.ChatMessageRoleUser,   Content: userMessage},
+                },
+            })
+        if err != nil {
+            return "", err
+        }
+        return response.Choices[0].Message.Content, nil
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Using friction signals and feature adoption
+
+The `personalization_directive` covers most cases, but you can reference `friction_signals` and `feature_adoption` directly for more tailored behaviour — for example, to surface specific help content or adjust your agent's suggestions:
+
+```javascript
+const frictionAreas = ctx.friction_signals
+  .map(s => `${s.feature}: ${s.signal}`)
+  .join('\n');
+
+const notAdopted = Object.entries(ctx.feature_adoption)
+  .filter(([, v]) => v.depth === 'none')
+  .map(([feature]) => feature);
+
+const systemPrompt = `...
+${ctx.personalization_directive}
+
+Known friction areas:
+${frictionAreas}
+
+Features not yet adopted: ${notAdopted.join(', ')}`;
+```
+
+<Accordion title="What if the Harpy API is unavailable?">
+  Harpy context should enhance your agent, not gate it. If the API call fails or times out, fall back gracefully so the agent still responds — just without personalisation.
+
+  ```javascript
+  async function getHarpyContext(userId) {
+    try {
+      const res = await fetch(`https://api.harpy.dev/v1/users/${userId}/context`, {
+        headers: { Authorization: `Bearer ${process.env.HARPY_API_SECRET}` },
+        signal: AbortSignal.timeout(2000), // 2s timeout
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
+
+  async function runAgent(userId, userMessage) {
+    const ctx = await getHarpyContext(userId);
+
+    const systemPrompt = ctx
+      ? `You are a helpful assistant for ${ctx.company ?? 'this product'}.
+
+## About this user
+${ctx.behavioral_summary}
+
+## How to respond to them
+${ctx.personalization_directive}`
+      : `You are a helpful assistant.`;
+
+    // ... call your LLM as normal
+  }
+  ```
+</Accordion>
+
+---
+
+## Account-level context
+
+For B2B products, the `company_context` block is included in every user response — no separate call needed. It gives your agent account-wide signals: plan, health, top adopted features, and where this user sits relative to their colleagues.
+
+---
+
+## Context freshness
+
+Harpy context is updated in real time as users interact with your product. For most use cases, call the API on demand at the start of each agent session. For high-frequency applications, consider caching the response with a short TTL (30–60 seconds).
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Enrich user profiles" icon="database" href="/installation#3-send-backend-data-optional">
+    Send backend attributes — billing data, CRM fields, support metrics — for richer context.
+  </Card>
+  <Card title="Secure your installation" icon="shield-check" href="/identity-verification">
+    Verify user UIDs with a backend signature to prevent spoofed identify calls.
+  </Card>
+</CardGroup>

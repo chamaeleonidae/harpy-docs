@@ -1,0 +1,450 @@
+---
+title: "Installation"
+description: "Install Harpy in your app and start identifying users."
+---
+
+## Prerequisites
+
+- A Harpy account — [join the early access waitlist](https://harpy.dev) if you don't have one yet
+- Your **account token** (client-safe, used in the browser snippet)
+- Your **API secret** (server-only, never expose this client-side)
+
+Both are available in your Harpy account — reach out to the team if you need them.
+
+---
+
+## 1. Install the snippet
+
+Choose the method that fits your stack.
+
+<Tabs>
+  <Tab title="Script tag">
+    Add this to the `<head>` of every page in your app. Replace `YOUR_ACCOUNT_TOKEN` with the token from your Harpy account.
+
+    ```html
+    <script>
+    !function(d,w){var t='YOUR_ACCOUNT_TOKEN',c='harpy',i=d.createElement('script');
+    i.src='https://cdn.harpy.dev/'+t+'/harpy.min.js';
+    i.async=1;d.head.appendChild(i);w[c]=w[c]||function(){(w[c].q=w[c].q||[]).push(arguments)};
+    }(document,window);
+    </script>
+    ```
+  </Tab>
+  <Tab title="npm">
+    ```bash
+    npm install @harpy-dev/harpy
+    ```
+
+    Then initialise Harpy once at your app's entry point:
+
+    ```javascript
+    import harpy from '@harpy-dev/harpy';
+
+    harpy.init('YOUR_ACCOUNT_TOKEN');
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  Harpy loads asynchronously and has no impact on page load performance. The snippet is under 5 KB gzipped.
+</Note>
+
+<AccordionGroup>
+  <Accordion title="Using a Content Security Policy (CSP)?">
+    If your app sets a `Content-Security-Policy` header, add Harpy's CDN to your `script-src` and `connect-src` directives:
+
+    ```
+    Content-Security-Policy:
+      script-src  'self' https://cdn.harpy.dev;
+      connect-src 'self' https://api.harpy.dev;
+    ```
+
+    Without this, the snippet will be silently blocked and no data will be collected.
+  </Accordion>
+  <Accordion title="Using a single-page app (React, Vue, Angular, etc.)?">
+    No special setup required — Harpy works with SPAs out of the box.
+
+    Two things to keep in mind:
+
+    - Call `harpy.identify()` **on login and on page refresh only** — not on every route change.
+    - Call `harpy.clear()` **on logout** if your app doesn't do a hard refresh, so Harpy doesn't continue tracking the previous session.
+
+    ```javascript
+    // On logout (no hard refresh)
+    harpy.clear();
+    ```
+
+    In TypeScript, access the global via `window.harpy` if the module type isn't available:
+
+    ```typescript
+    declare var window: any;
+    const harpy = window['harpy'];
+    ```
+  </Accordion>
+  <Accordion title="Embedding Harpy inside an iFrame?">
+    Install the Harpy snippet **separately inside the iframe** — it won't inherit the parent page's installation.
+
+    Two requirements:
+    - The `<iframe>` element must **not** have a `sandbox` attribute — this blocks the snippet from running.
+    - Use the **same user UID** in both the parent and the iframe so sessions are linked correctly.
+
+    Same-subdomain and cross-subdomain iframes both work, as long as the UID matches.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 2. Identify users
+
+Call `harpy.identify()` as soon as you know who the current user is — typically after login or on app load for an authenticated session.
+
+The `uid` (first argument) must be the user's stable database ID — not an email address or session ID. This is what links front-end behavior to your backend data and to Harpy API lookups later.
+
+```javascript
+harpy.identify(USER.ID_IN_DB, {
+
+  // Core identity
+  email:    USER.EMAIL,
+  name:     USER.NAME,
+  created:  USER.SIGN_UP_DATE,       // ISO 8601, e.g. "2024-03-01T00:00:00Z"
+  role:     USER.ROLE,               // e.g. "admin", "member", "viewer"
+
+  // Subscription & revenue
+  plan:          USER.PLAN,          // e.g. "pro", "free", "enterprise"
+  plan_interval: USER.BILLING_CYCLE, // "monthly" or "annual"
+  mrr:           USER.MRR,           // monthly recurring revenue (in dollars)
+  ltv:           USER.LIFETIME_VALUE,// total revenue attributed to this user
+  trial_ends:    USER.TRIAL_END_DATE,// ISO 8601 — include if on a trial
+  credits:       USER.CREDITS,       // usage credits remaining
+  tokens_used:   USER.TOKENS_USED,   // e.g. AI tokens consumed this billing period
+  tokens_limit:  USER.TOKENS_LIMIT,  // token allowance for their plan
+
+  // Company / account — include this block for B2B products
+  company: {
+    uid:          COMPANY.ID_IN_DB,
+    name:         COMPANY.NAME,
+    plan:         COMPANY.PLAN,
+    plan_interval:COMPANY.BILLING_CYCLE,
+    mrr:          COMPANY.MRR,
+    seats:        COMPANY.SEATS_TOTAL,  // total seats on this account
+    seats_used:   COMPANY.SEATS_USED,   // seats currently occupied
+    created:      COMPANY.CREATED_DATE, // ISO 8601
+  },
+
+});
+```
+
+<Tip>
+  Send every attribute you have available. Harpy uses these to build richer behavioral summaries — the more signal you provide, the more useful the context your agents receive.
+</Tip>
+
+### Attribute reference
+
+**User**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `email` | string | Email address |
+| `name` | string | Full name |
+| `created` | ISO 8601 | Account creation date |
+| `role` | string | User's role within the product |
+| `plan` | string | Current subscription plan |
+| `plan_interval` | string | Billing cadence: `"monthly"` or `"annual"` |
+| `mrr` | number | Monthly recurring revenue from this user |
+| `ltv` | number | Lifetime revenue attributed to this user |
+| `trial_ends` | ISO 8601 | Trial expiry date, if applicable |
+| `credits` | number | Usage credits remaining |
+| `tokens_used` | number | Tokens or usage units consumed this period |
+| `tokens_limit` | number | Token allowance for their current plan |
+
+**Company (B2B)**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `company.uid` | string | Company's stable database ID |
+| `company.name` | string | Company name |
+| `company.plan` | string | Account-level subscription plan |
+| `company.plan_interval` | string | `"monthly"` or `"annual"` |
+| `company.mrr` | number | MRR for the account |
+| `company.seats` | number | Total seats purchased |
+| `company.seats_used` | number | Seats currently in use |
+| `company.created` | ISO 8601 | When the account was created |
+
+Any additional key/value pairs you pass are stored as custom attributes and available via the API.
+
+### Implement with AI
+
+Not sure where all these values live in your codebase? Drop one of the prompts below into Cursor or Claude Code and the agent will find them for you.
+
+Use the **full prompt** to generate the complete identify call from scratch. Use the focused prompts to extend one you've already started.
+
+<AccordionGroup>
+  <Accordion title="Full setup — generate the complete identify call">
+    ```
+    I'm integrating Harpy (harpy.dev) — a user context platform for AI agents.
+
+    I need you to find where user and company data is available in this codebase and
+    generate a harpy.identify() call that sends as many relevant attributes as possible.
+
+    Search for:
+    - The authenticated user object (auth context, session, current_user, etc.)
+    - Subscription and billing data (plan, MRR, LTV, trial status, billing interval)
+    - Usage/consumption data (tokens used, credits, API calls, seats)
+    - Company or account objects (for B2B: org, workspace, team, account)
+
+    Then generate a harpy.identify() call in the correct place (after login / on
+    authenticated app load) using this shape:
+
+    harpy.identify(USER.ID, {
+      // Core identity
+      email:    ...,
+      name:     ...,
+      created:  ...,  // ISO 8601
+      role:     ...,
+
+      // Subscription & revenue
+      plan:          ...,
+      plan_interval: ...,  // "monthly" or "annual"
+      mrr:           ...,  // in dollars
+      ltv:           ...,
+      trial_ends:    ...,  // ISO 8601 if applicable
+      credits:       ...,
+      tokens_used:   ...,
+      tokens_limit:  ...,
+
+      // Company / account (B2B only — omit if not applicable)
+      company: {
+        uid:          ...,
+        name:         ...,
+        plan:         ...,
+        plan_interval:...,
+        mrr:          ...,
+        seats:        ...,
+        seats_used:   ...,
+        created:      ...,  // ISO 8601
+      },
+    });
+
+    Only include attributes where you can find a real value in the codebase.
+    Add a comment next to any attribute you're unsure about so I can review it.
+    If a company block doesn't apply to this product, omit it entirely.
+    ```
+  </Accordion>
+  <Accordion title="Focused — subscription & revenue attributes only">
+    ```
+    I'm using Harpy (harpy.dev) to send user context to AI agents.
+    I already have a basic harpy.identify() call in place and want to add
+    subscription and revenue attributes.
+
+    Search this codebase for:
+    - The user's current plan or tier
+    - Billing interval (monthly vs annual)
+    - MRR or ARR data
+    - Lifetime value
+    - Trial status and expiry
+    - Any usage-based billing fields (credits, tokens, API quota)
+
+    Find where these values live (billing service, subscription model, user object, etc.)
+    and generate the additional attributes to add to the existing harpy.identify() call.
+    Add a comment next to anything you're inferring rather than reading directly.
+    ```
+  </Accordion>
+  <Accordion title="Focused — company & account attributes (B2B)">
+    ```
+    I'm using Harpy (harpy.dev) and want to add account-level context to my
+    harpy.identify() calls for B2B grouping.
+
+    Search this codebase for the company, organisation, workspace, or account object
+    associated with the current user. Look for:
+    - A stable account/company ID
+    - Account name
+    - Account-level subscription plan and billing interval
+    - MRR or contract value at the account level
+    - Number of seats purchased and seats currently in use
+    - Account creation date
+
+    Generate the company block to add inside harpy.identify():
+
+    company: {
+      uid:          ...,
+      name:         ...,
+      plan:         ...,
+      plan_interval:...,
+      mrr:          ...,
+      seats:        ...,
+      seats_used:   ...,
+      created:      ...,
+    }
+
+    Only include fields where you find real values. Comment any uncertain ones.
+    ```
+  </Accordion>
+  <Accordion title="Expand an existing identify call">
+    ```
+    I have this existing harpy.identify() call:
+
+    [PASTE YOUR CURRENT IDENTIFY CALL HERE]
+
+    I want to extend it with more attributes. Search the codebase for any additional
+    user or company data not already included — particularly subscription status,
+    revenue figures, usage metrics, and account-level data.
+
+    Suggest additions as a diff or updated version of the call above.
+    Comment any fields you're inferring or that may need manual verification.
+    ```
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  After running any of these prompts, check that sensitive values (API secrets, payment tokens) are not included in the identify call — it runs client-side. Revenue and billing figures are fine; raw payment credentials are not.
+</Note>
+
+<Accordion title="Only want to identify a subset of users?">
+  Wrap `harpy.identify()` in a conditional. Harpy only tracks users you explicitly identify — if the call isn't made, that user is not tracked.
+
+  ```javascript
+  if (shouldTrackUser) {
+    harpy.identify(USER.ID_IN_DB, { ... });
+  }
+  ```
+
+  Common use cases: new users only, paid users only, excluding internal team members, or excluding mobile sessions.
+</Accordion>
+
+---
+
+## 3. Send backend data (optional)
+
+For attributes you can't expose client-side — or for server-driven events — send them directly from your backend.
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X POST https://api.harpy.dev/v1/users/USER_UID/attributes \
+      -H "Authorization: Bearer YOUR_API_SECRET" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "mrr": 299,
+        "seats": 12,
+        "last_login": "2025-03-17T14:23:00Z",
+        "support_tickets_open": 2
+      }'
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    ```javascript
+    await fetch(`https://api.harpy.dev/v1/users/${userId}/attributes`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.HARPY_API_SECRET}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        mrr: 299,
+        seats: 12,
+        last_login: new Date().toISOString(),
+        support_tickets_open: 2,
+      }),
+    });
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import httpx, os
+
+    httpx.post(
+        f"https://api.harpy.dev/v1/users/{user_id}/attributes",
+        headers={"Authorization": f"Bearer {os.environ['HARPY_API_SECRET']}"},
+        json={
+            "mrr": 299,
+            "seats": 12,
+            "last_login": "2025-03-17T14:23:00Z",
+            "support_tickets_open": 2,
+        },
+    )
+    ```
+  </Tab>
+  <Tab title="Ruby">
+    ```ruby
+    require 'net/http'
+    require 'json'
+
+    uri = URI("https://api.harpy.dev/v1/users/#{user_id}/attributes")
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = true
+
+    req = Net::HTTP::Post.new(uri)
+    req['Authorization'] = "Bearer #{ENV['HARPY_API_SECRET']}"
+    req['Content-Type']  = 'application/json'
+    req.body = {
+      mrr: 299, seats: 12,
+      last_login: Time.now.iso8601,
+      support_tickets_open: 2
+    }.to_json
+
+    http.request(req)
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    import (
+        "bytes"
+        "encoding/json"
+        "fmt"
+        "net/http"
+        "os"
+    )
+
+    payload, _ := json.Marshal(map[string]any{
+        "mrr": 299, "seats": 12,
+        "last_login": "2025-03-17T14:23:00Z",
+        "support_tickets_open": 2,
+    })
+
+    req, _ := http.NewRequest("POST",
+        fmt.Sprintf("https://api.harpy.dev/v1/users/%s/attributes", userID),
+        bytes.NewBuffer(payload))
+    req.Header.Set("Authorization", "Bearer "+os.Getenv("HARPY_API_SECRET"))
+    req.Header.Set("Content-Type", "application/json")
+
+    http.DefaultClient.Do(req)
+    ```
+  </Tab>
+</Tabs>
+
+Replace `USER_UID` with the same stable ID you pass to `harpy.identify()`.
+
+---
+
+## 4. Verify the installation
+
+Once a user session has been identified, you can confirm data is flowing via the API:
+
+```bash
+curl https://api.harpy.dev/v1/users/USER_UID \
+  -H "Authorization: Bearer YOUR_API_SECRET"
+```
+
+A successful response returns the user's profile along with any behavioral data Harpy has collected so far.
+
+<Accordion title="Testing locally or across staging and production?">
+  The same snippet works across all environments — staging, production, and local. It's inactive until you start making `harpy.identify()` calls, so there's no risk of it affecting users by being present in staging.
+
+  **Local development** requires HTTPS. Two options:
+
+  - Generate a local certificate with [mkcert](https://github.com/FiloSottile/mkcert)
+  - Use a tunnel with [ngrok](https://ngrok.com) (`ngrok http 3000`)
+</Accordion>
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Give your agents user context" icon="robot" href="/agent-context">
+    Fetch a user's behavioral summary and inject it into your AI agent.
+  </Card>
+  <Card title="Identity verification" icon="shield-check" href="/identity-verification">
+    Secure your installation by verifying user UIDs with a backend-generated signature.
+  </Card>
+</CardGroup>

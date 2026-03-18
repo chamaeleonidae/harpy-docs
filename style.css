@@ -1,0 +1,16 @@
+@import url('https://fonts.googleapis.com/css2?family=Rubik+Mono+One&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+
+/* Backgrounds */
+html, body       { background-color: #F0F0EB; }
+.dark html,
+.dark body       { background-color: #3C403F; }
+
+/* Typography */
+body {
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Rubik Mono One', monospace;
+  font-weight: 400;
+}
